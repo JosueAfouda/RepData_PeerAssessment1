@@ -1,25 +1,259 @@
 ---
-title: "Reproducible Research: Peer Assessment 1"
+title: "Reproducible Research: Peer Assessment 1 (AFOUDA)"
+author: "Josue Afouda"
 output: 
   html_document:
     keep_md: true
 ---
 
+```{r, message=FALSE, warning=FALSE}
+# Libraries
+library(dplyr)
+library(ggplot2)
+library(plotly)
+library(imputeTS)
+```
+
 
 ## Loading and preprocessing the data
 
+```{r}
+# the path to the zip file
+zip_file_path <- "activity.zip" 
+
+# the name of the CSV file within the zip
+csv_file_name <- "activity.csv"
+
+# Extract the CSV file from the zip
+unzip(zip_file_path, files = csv_file_name, exdir = tempdir())
+
+# Import the CSV data
+activity <- readr::read_csv(file.path(tempdir(), csv_file_name))
+
+# Display the imported CSV data
+head(activity)
+
+```
 
 
-## What is mean total number of steps taken per day?
+```{r}
+# Résumé statistique
+summary(activity)
+```
+
+
+# What is mean total number of steps taken per day?
+
+
+```{r}
+# Dataframe sans valeurs manquantes
+activity_cleaned <- activity %>%
+  filter(!is.na(steps))
+
+dim(activity_cleaned)
+
+head(activity_cleaned)
+```
+
+
+```{r}
+# Dataframe of Total steps per day 
+total_steps <- activity_cleaned %>%
+  group_by(date) %>%
+  summarise(total_steps_per_day = sum(steps))
+
+head(total_steps)
+
+# histogram of the total number of steps taken each day
+ ggplot(total_steps, aes(total_steps_per_day)) +
+   geom_histogram(bins = 50) +
+   ggtitle("Histogram of total steps taken each day")
+```
+
+
+```{r}
+# the mean and median of the total number of steps taken per day
+
+paste(
+  "The mean of the total number of steps taken per day is",
+  mean(total_steps$total_steps_per_day),
+  sep = " "
+)
+
+paste(
+  "The median of the total number of steps taken per day is",
+  median(total_steps$total_steps_per_day),
+  sep = " "
+)
+```
+
+
+# What is the average daily activity pattern?
+
+```{r}
+# the average number of steps for each 5-minute interval
+average_steps <- aggregate(steps ~ interval, activity_cleaned, mean) # ou activity_cleaned %>% group_by(interval) %>% summarise(avg = mean(steps))
+head(average_steps)
+```
+
+```{r}
+# the time series plot of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all days (y-axis)
+p <- ggplot(average_steps, aes(x = interval, y = steps)) +
+  geom_line() +
+  labs(x = "5-Minute Interval", y = "Average Steps") +
+  ggtitle("Average Number of Steps Taken by 5-Minute Interval")
+
+p
+```
+
+
+```{r}
+# Converting the ggplot in plotly
+ggplotly(p, dynamicTicks = TRUE)
+```
+
+```{r}
+# Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps?
+# From the plotly graphic, this is 835 5-minute intervall.
+max_interval <- average_steps[which.max(average_steps$steps), ]
+max_interval
+```
+The dplyr code:
+
+```{r}
+average_steps %>%
+  arrange(desc(steps)) %>%
+  slice(1) %>%
+  pull(interval)
+```
+
+
+# Imputing missing
+
+```{r}
+paste("The total number of missing values in activity dataframe is:", sum(is.na(activity)), sep = " ")
+```
+
+## Filling in all of the missing values in the "activity" dataframe
+
+The imputeTS package is incredibly powerful and easy to use; it can be used to impute missing values for time series.
+
+```{r}
+# install.packages("imputeTS")
+# library(imputeTS)
+```
+
+
+```{r}
+# The distribution of missing values
+ggplot_na_distribution(activity$steps)
+```
+
+```{r}
+# Let's print statistics about missing values
+statsNA(activity$steps)
+```
+
+
+```{r}
+# Using of Kalman filter approach to replace missing values
+activity_imputed <- na_kalman(activity)
+sum(is.na(activity_imputed))
+```
+
+```{r}
+# Dataframe of Total steps per day 
+total_steps_imp <- activity_imputed %>%
+  group_by(date) %>%
+  summarise(total_steps_per_day = sum(steps))
+
+head(total_steps_imp)
+
+# histogram of the total number of steps taken each day
+ ggplot(total_steps_imp, aes(total_steps_per_day)) +
+   geom_histogram(bins = 50) +
+   ggtitle("Histogram of total steps taken each day")
+```
+
+
+```{r}
+# the mean and median of the total number of steps taken per day
+
+paste(
+  "The mean of the total number of steps taken per day is",
+  mean(total_steps_imp$total_steps_per_day),
+  sep = " "
+)
+
+paste(
+  "The median of the total number of steps taken per day is",
+  median(total_steps_imp$total_steps_per_day),
+  sep = " "
+)
+```
+
+Yes, These values differ from the estimates from the first part of the assignment.
 
 
 
-## What is the average daily activity pattern?
+- **Without Imputing Missing Data**:
+
+Mean: 10766.1886792453
+
+Median: 10765
+
+- **With Imputing Missing Data**:
+
+Mean: 9354.25868918388
+
+Median: 10395
+
+The key observations are:
+
+- **Mean**: The mean is significantly affected by imputing missing values. The mean without imputation is higher than the mean with imputation. This is because missing values are often replaced with some typical or calculated values (like the mean) during imputation, which can reduce the overall mean.
+
+- **Median**: The median is also affected by imputing missing values, but not as drastically as the mean. The median is less sensitive to outliers or extreme values, so the impact of imputation is relatively smaller compared to the mean.
+
+In summary, imputing missing data tends to decrease the estimates of the total daily number of steps. This is mainly due to the nature of imputation methods, which often fill in missing values with central tendencies like the mean, leading to a reduction in variability and potentially skewing the distribution. The choice of imputation method and its impact on the data's characteristics should be carefully considered when dealing with missing values, especially in cases where accurate estimates are crucial for analysis.
 
 
+# Are there differences in activity patterns between weekdays and weekends?
 
-## Imputing missing values
+```{r}
+# new factor variable in the dataset with two levels – “weekday” and “weekend” indicating whether a given date is a weekday or weekend day.
+
+activity_imputed <- activity_imputed %>%
+  mutate(day_type = ifelse(
+    weekdays(date) %in% c("samedi", "dimanche"),
+    "weekend",
+    "weekday"
+  ))
+
+head(activity_imputed)
+
+str(activity_imputed)
+```
 
 
+## Panel plot containing a time series plot of the 5-minute interval and the average number of steps taken
 
-## Are there differences in activity patterns between weekdays and weekends?
+```{r}
+# Calculate the average number of steps for each 5-minute interval and day type
+average_steps2 <- aggregate(steps ~ interval + day_type, activity_imputed, mean)
+
+head(average_steps2)
+
+# Create the panel plot using ggplot2
+p2 <- ggplot(average_steps2, aes(x = interval, y = steps)) +
+  geom_line() +
+  facet_wrap(~ day_type, ncol = 1) +
+  labs(x = "5-Minute Interval", y = "Average Steps") +
+  ggtitle("Average Number of Steps Taken by 5-Minute Interval (Weekday vs Weekend)")
+
+p2
+```
+
+```{r}
+ggplotly(p2, dynamicTicks = TRUE)
+```
+
